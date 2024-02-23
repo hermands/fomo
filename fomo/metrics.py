@@ -37,7 +37,7 @@ import pandas as pd
 import logging
 import itertools as it
 from fomo.utils import categorize 
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_squared_error, average_precision_score
 
 logger = logging.getLogger(__name__)
 
@@ -322,6 +322,9 @@ def subgroup_FNR_loss(y_true, y_pred, X_protected, grouping = 'intersectional', 
 def subgroup_MSE_loss(y_true, y_pred, X_protected, grouping = 'intersectional', abs_val = False, gamma = True):
     return subgroup_loss(y_true, y_pred, X_protected, mean_squared_error, grouping, abs_val, gamma)
 
+def subgroup_AUPRC_loss(y_true, y_pred, X_protected, grouping='intersectional', abs_val=False, gamma=True):
+    return subgroup_loss(y_true, y_pred, X_protected, average_precision_score, grouping, abs_val, gamma)
+
 def subgroup_scorer(
     estimator,
     X,
@@ -361,6 +364,25 @@ def subgroup_FNR_scorer(estimator, X, y_true, **kwargs):
 def subgroup_MSE_scorer(estimator, X, y_true, **kwargs):
     return subgroup_scorer( estimator, X, y_true, mean_squared_error, **kwargs)
 
+def subgroup_AUPRC_scorer(estimator, X, y_true, **kwargs):   # groups=None, X_protected=None, grouping='intersectional', abs_val=False, gamma=True):
+    
+    """Scorer function for subgroup AUPRC.
+
+    Parameters:
+    estimator: The model to evaluate.
+    X (pd.DataFrame): Feature data.
+    y_true (array-like): True binary labels.
+    groups (list): List of columns in X to be used for subgrouping.
+    X_protected (pd.DataFrame): Protected attributes for subgroups.
+    grouping (str): Type of grouping ('intersectional' or 'marginal').
+    abs_val (bool): Whether to take the absolute value of the deviation.
+    gamma (bool): Whether to scale the deviation by the group size.
+
+    Returns:
+    float: Subgroup AUPRC score.
+    """
+    
+    return subgroup_scorer( estimator, X, y_true, average_precision_score, **kwargs)
 
 def flex_loss(estimator, X, y_true, metric, **kwargs):
     """
