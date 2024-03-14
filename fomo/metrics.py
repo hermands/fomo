@@ -37,7 +37,9 @@ import pandas as pd
 import logging
 import itertools as it
 from fomo.utils import categorize 
-from sklearn.metrics import mean_squared_error, average_precision_score
+from sklearn.metrics import mean_squared_error, average_precision_score, balanced_accuracy_score
+
+import pdb
 
 logger = logging.getLogger(__name__)
 
@@ -249,6 +251,18 @@ def FNR(y_true, y_pred):
     yt = y_true.astype(bool)
     return np.sum(1-y_pred[yt])/np.sum(yt)
 
+def TR(y_true, y_pred):
+    """Returns prediction true rate
+    
+    Parameters
+    ----------
+    y_true: array-like, bool 
+        True labels. 
+    y_pred: array-like, float or bool
+        Predicted labels. 
+    """
+    
+    return np.sum(y_pred) / len(y_pred)
 
 def subgroup_loss(y_true, y_pred, X_protected, metric, grouping = 'intersectional', abs_val = False, gamma = True):
     assert isinstance(X_protected, pd.DataFrame), "X should be a dataframe"
@@ -278,13 +292,26 @@ def subgroup_loss(y_true, y_pred, X_protected, metric, grouping = 'intersectiona
     # avg_len = sum(gp_lens) / len(gp_lens) if gp_lens else 0
 
     if isinstance(metric,str):
-        loss_fn = FPR if metric=='FPR' else FNR
+        if metric == 'FPR':
+            loss_fn = FPR
+        elif metric=='FNR':
+            loss_fn = FNR
+        elif metric=='TR':
+            loss_fn = TR
+        else:
+            raise ValueError(f'metric={metric} must be "FPR", "FNR", "TR", or a callable')
     elif callable(metric):
         loss_fn = metric
     else:
         raise ValueError(f'metric={metric} must be "FPR", "FNR", or a callable')
 
     base_loss = loss_fn(y_true, y_pred)
+    # print('metric: ', metric)
+    # print('y_true', np.sum(y_true))
+    # print('y_pred', np.sum(y_pred))
+    # print('base loss: ', base_loss)
+    # print('N', len(y_pred))
+
     max_loss = 0.0
     for c, idx in categories.items():
         # for FPR and FNR, gamma is also conditioned on the outcome probability
@@ -301,7 +328,9 @@ def subgroup_loss(y_true, y_pred, X_protected, metric, grouping = 'intersectiona
         )
         
         deviation = category_loss - base_loss
-
+        # print('Catetgory: ', c)
+        # print('category loss: ', category_loss)
+        # print('g: ', g)
         if abs_val:
             deviation = np.abs(deviation)
         
@@ -310,14 +339,18 @@ def subgroup_loss(y_true, y_pred, X_protected, metric, grouping = 'intersectiona
 
         if deviation > max_loss:
             max_loss = deviation
+        # print('Deviation: ', deviation)
 
     return max_loss
 
 def subgroup_FPR_loss(y_true, y_pred, X_protected, grouping = 'intersectional', abs_val = False, gamma = True):
     return subgroup_loss(y_true, y_pred, X_protected, 'FPR', grouping, abs_val, gamma)
 
-def subgroup_FNR_loss(y_true, y_pred, X_protected, grouping = 'intersectional', abs_val = False, gamma = True):
-    return subgroup_loss(y_true, y_pred, X_protected, 'FNR', grouping, abs_val, gamma)
+def subgroup_FNR_loss(y_true, y_pred, X_protected, grouping = 'intersectional', abs_val = False, gamma = True, use_proba=True):
+    return subgroup_loss(y_true, y_pred, X_protected, 'FNR', grouping, abs_val, gamma, use_proba=use_proba)
+
+def subgroup_TR_loss(y_true, y_pred, X_protected, grouping = 'intersectional', abs_val = False, gamma = True):
+    return subgroup_loss(y_true, y_pred, X_protected, 'TR', grouping, abs_val, gamma)
 
 def subgroup_MSE_loss(y_true, y_pred, X_protected, grouping = 'intersectional', abs_val = False, gamma = True):
     return subgroup_loss(y_true, y_pred, X_protected, mean_squared_error, grouping, abs_val, gamma)
@@ -335,7 +368,7 @@ def subgroup_scorer(
     gamma,
     groups=None,
     X_protected=None,
-    weights=None, 
+    weights=None
 ):
     """Calculate the subgroup fairness of estimator on X according to `metric'.
     TODO: handle use case when Xp is passed
@@ -343,8 +376,10 @@ def subgroup_scorer(
     assert isinstance(X, pd.DataFrame), "X should be a dataframe"
     assert groups is not None or X_protected is not None, "groups or X_protected must be defined."
 
-    y_pred = estimator.predict_proba(X)[:,1]
-    # y_pred = estimator.predict(X)
+    if metric in ['FNR', 'FPR', 'TR']:   # TODO: need to generalize
+        y_pred = estimator.predict(X)
+    else:  # use_proba
+        y_pred = estimator.predict_proba(X)[:,1]
 
     # assert groups is not None, "groups must be defined."
     if groups is None:
@@ -360,6 +395,9 @@ def subgroup_FPR_scorer(estimator, X, y_true, **kwargs):
 
 def subgroup_FNR_scorer(estimator, X, y_true, **kwargs):
     return subgroup_scorer( estimator, X, y_true, 'FNR', **kwargs)
+
+def subgroup_TR_scorer(estimator, X, y_true, **kwargs):
+    return subgroup_scorer( estimator, X, y_true, 'TR', **kwargs)
 
 def subgroup_MSE_scorer(estimator, X, y_true, **kwargs):
     return subgroup_scorer( estimator, X, y_true, mean_squared_error, **kwargs)
